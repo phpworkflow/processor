@@ -1,0 +1,32 @@
+{
+  "name": "phpworkflow/processor",
+  "description": "Processor for execution phpworkflows",
+  "minimum-stability": "dev",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Ruslan Dmytrakovych",
+      "email": "rus.wanderer@gmail.com"
+    }
+  ],
+  "require": {
+    "php": ">=7.4",
+    "ext-json": "*",
+    "ext-pcntl": "*",
+    "ext-posix": "*",
+    "ext-pdo": "*",
+    "psr/log": "*",
+    "phpworkflow/workflow": "*"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^7.5",
+    "roave/security-advisories":"dev-master"
+  },
+  "autoload": {
+    "psr-4": {
+      "PhpWorkflow\\Processor\\": ["src/"],
+      "SampleApp\\": "bin/"
+    }
+  }
+}
