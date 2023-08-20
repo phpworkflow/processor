@@ -40,11 +40,12 @@ class ProcessManager
     /**
      * @param int $numWorkers
      */
-    public function __construct(int $numWorkers=5)
+    public function __construct(int $numWorkers=0)
     {
         $this->cfg = new Config();
         $this->numWorkers = $numWorkers ?: $this->cfg->getNumberOfWorkers();
         $this->logger = Logger::instance(null, ILogger::INFO);
+        $this->logger->set_log_channel($this->cfg->getLogChannel());
         $this->workflowExchangePipeName = $this->cfg->getWorkflowExchangePipeName();
         $this->taskHistory = [];
 
@@ -135,12 +136,14 @@ class ProcessManager
             throw new RuntimeException("Failed to fork: " . pcntl_get_last_error());
         }
 
-        if ($pid > 0) {
+	    if ($pid > 0) {
+   	        $this->logger->info("Supplier ($pid) started");
             $this->supplierPid = $pid;
             sleep(1);
             return;
         }
 
+   	    $this->logger->info("Supplier started");
         $this->supplier->run();
 
         exit(0);

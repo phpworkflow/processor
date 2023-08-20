@@ -1,9 +1,14 @@
 <?php
 
 namespace PhpWorkflow\Processor;
+use Workflow\Logger\ILogger;
 
 class Config
 {
+    private const WORKFLOWS_PER_REQUEST = 100;
+
+    private const NUMBER_OR_WORKERS = 5;
+
     /**
      * @return string
      */
@@ -40,7 +45,19 @@ class Config
     public function getNumberOfWorkers(): int {
         $env = getenv('WORKFLOW_NUMBER_OF_WORKERS');
 
-        return $env ?: ($_ENV['WORKFLOW_NUMBER_OF_WORKERS'] ?? 5);
+        return $env ?: ($_ENV['WORKFLOW_NUMBER_OF_WORKERS'] ?? self::NUMBER_OR_WORKERS);
 
+    }
+
+    public function getWorkflowsPerRequest(): int {
+        $env = getenv('WORKFLOW_WORKFLOWS_PER_REQUEST');
+
+        return $env ?: ($_ENV['WORKFLOW_WORKFLOWS_PER_REQUEST'] ?? self::WORKFLOWS_PER_REQUEST);
+    }
+
+    public function getLogChannel(): int {
+        $env = getenv('WORKFLOW_LOG_CHANNEL');
+
+        return $env ?: ($_ENV['WORKFLOW_LOG_CHANNEL'] ?? ILogger::LOG_OFF);
     }
 }

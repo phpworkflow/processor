@@ -11,7 +11,7 @@ class Supplier
 {
     private const DEFAULT_NUMBER_JOBS_PER_WORKER = 5;
 
-    private const WORKFLOWS_PER_REQUEST = 25;
+    private const MAX_NUM_PIPE_ERRORS = 10;
 
     /**
      * @var Postgres
@@ -52,7 +52,9 @@ class Supplier
     {
         $cfg = $this->cfg->getJobsPerWorkerCfg();
 
-        $queues = $this->storage->get_active_workflow_by_type(self::WORKFLOWS_PER_REQUEST);
+        $workflowsPerRequest = $this->cfg->getWorkflowsPerRequest();
+
+        $queues = $this->storage->get_active_workflow_by_type($workflowsPerRequest);
         $result = [];
         foreach ($queues as $wfType => $jobs) {
             $jobsPerWorker = $cfg[$wfType] ?? self::DEFAULT_NUMBER_JOBS_PER_WORKER;
@@ -76,28 +78,30 @@ class Supplier
      */
     public function run(): void
     {
-        $pipeFd = fopen($this->cfg->getWorkflowExchangePipeName(), "wb");
-        if (!$pipeFd) {
-            throw new RuntimeException("Failed to open pipe for writing");
-        }
+	    $pipeFd = fopen($this->cfg->getWorkflowExchangePipeName(), "wb");
+	    if (!$pipeFd) {
+		    throw new RuntimeException("Failed to open pipe for writing");
+	    }
 
-        $this->storage = Postgres::instance($this->cfg->getDSN());
+	    $this->storage = Postgres::instance($this->cfg->getDSN());
+        $numPipeErrors = 0;
 
-        do {
-            $jobs = $this->getJobsForWorkers();
+	    do {
+		    $jobs = $this->getJobsForWorkers();
 
-            foreach ($jobs as $j) {
-                if (fwrite($pipeFd, $j) !== strlen($j)) {
-                    $this->logger->warn("Can't write data to pipe");
-                }
-                $this->lastPacket = $j;
-                sleep(1);
-            }
-            sleep(1);
-        } while (!$this->isExit && (--$this->readCycles > 0));
+		    foreach ($jobs as $j) {
+			    if (fwrite($pipeFd, $j) !== strlen($j)) {
+				    $numPipeErrors++;
+				    $this->logger->warn("$this->readCycles Can't write data to pipe");
+			    }
+			    $this->lastPacket = $j;
+			    sleep(1);
+		    }
+		    sleep(1);
+	    } while (!$this->isExit && (--$this->readCycles > 0) && ($numPipeErrors < self::MAX_NUM_PIPE_ERRORS));
 
-        fclose($pipeFd);
+	    fclose($pipeFd);
 
-        $this->logger->info("Supplier finished");
+	    $this->logger->info("Supplier finished");
     }
 }
