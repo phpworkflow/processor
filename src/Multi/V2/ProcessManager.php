@@ -43,7 +43,7 @@ class ProcessManager extends ProcessManagerV1
 
     public function run()
     {
-        $this->logger->info("Task manager ($this->myPid) started");
+        $this->logger->info("Task manager V2 ($this->myPid) started");
 
         $this->createSupplier();
         $jobCfg = $this->cfg->getJobsPerWorkerCfg();

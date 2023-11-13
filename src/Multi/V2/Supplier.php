@@ -27,6 +27,9 @@ class Supplier extends SupplierV1
 
         do {
             $jobs = $this->storage->get_scheduled_workflows();
+
+            $this->logger->info("Supplier read " . count($jobs) . " jobs");
+
             foreach ($jobs as $job) {
                 $this->eventsQueue->push($job);
             }

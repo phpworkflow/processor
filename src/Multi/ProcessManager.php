@@ -11,7 +11,7 @@ use Workflow\Storage\Postgres;
 
 class ProcessManager
 {
-    private const MICRO_DELAY = 100000; // 0.1 sec
+    protected const MICRO_DELAY = 100000; // 0.1 sec
 
     protected const EXECUTION_PAUSE = 5; // Seconds
 
@@ -93,7 +93,9 @@ class ProcessManager
             usleep(self::MICRO_DELAY);
         }
 
-        fclose($this->pipeFd);
+        if(!empty($this->pipeFd)) {
+            fclose($this->pipeFd);
+        }
     }
 
     protected function getWorkflows(): array
