@@ -97,7 +97,7 @@ class ProcessManager extends ProcessManagerV1
         $this->finalizeChildren();
     }
 
-    protected function getJobsFromQueue(): array
+    protected function getJobsFromQueue(): void
     {
         $jobs = $this->eventsQueue->blPop(100); // TODO hardcode
 
