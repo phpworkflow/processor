@@ -60,4 +60,24 @@ class Config
 
         return $env ?: ($_ENV['WORKFLOW_LOG_CHANNEL'] ?? ILogger::LOG_OFF);
     }
+
+    /**
+     * Redis stream name for supplier events
+     * @return string
+     */
+    public function getSupplierQueue(): string {
+        $env = getenv('WORKFLOW_SUPPLIER_QUEUE');
+
+        return $env ?: ($_ENV['WORKFLOW_SUPPLIER_QUEUE'] ?? 'workflow_supplier_queue');
+    }
+
+    /**
+     * Supplier cycle duration in seconds
+     */
+    public function getSupplierCycleDuration(): int
+    {
+        $env = getenv('WORKFLOW_SUPPLIER_CYCLE_DURATION');
+
+        return $env ?: ($_ENV['WORKFLOW_SUPPLIER_CYCLE_DURATION'] ?? 30);
+    }
 }

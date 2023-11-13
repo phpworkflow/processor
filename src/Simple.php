@@ -4,6 +4,9 @@ namespace PhpWorkflow\Processor;
 use Workflow\Event;
 use Workflow\Logger\ILogger;
 use Workflow\Storage\IStorage;
+use Workflow\Storage\Redis\Config as RedisConfig;
+use Workflow\Storage\Redis\Queue as RedisQueue;
+use Workflow\Storage\Redis\Event as RedisEvent;
 use Workflow\Workflow;
 
 class Simple extends AbstractProcessor {
@@ -16,6 +19,8 @@ class Simple extends AbstractProcessor {
 
     private int $num_tasks=self::NUM_TASKS;
 
+    protected RedisQueue $scheduleQueue;
+
     public function __construct(IStorage $storage, ILogger $logger)
     {
         parent::__construct($storage, $logger);
@@ -23,9 +28,11 @@ class Simple extends AbstractProcessor {
             $this->logger->info("Graceful exit not supported");
             return;
         }
-        
+
+        $redisCfg = new RedisConfig();
+        $this->scheduleQueue = new RedisQueue([$redisCfg->scheduleQueue()]);
         $this->logger->info("Graceful exit ON");
-        pcntl_async_signals(TRUE);
+        pcntl_async_signals(true);
         pcntl_signal(SIGHUP,  [$this, "sigHandler"]);
         pcntl_signal(SIGINT, [$this, "sigHandler"]);
         pcntl_signal(SIGTERM, [$this, "sigHandler"]);
@@ -80,6 +87,8 @@ class Simple extends AbstractProcessor {
             }
             // Save and unlock workflow
             $this->storage->save_workflow($workflow);
+            $job = new RedisEvent($workflow->get_id(), $workflow->get_type(), $workflow->get_start_time());
+            $this->scheduleQueue->push($job);
 
             if($this->exit) {
                 return;

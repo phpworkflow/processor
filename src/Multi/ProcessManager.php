@@ -13,7 +13,7 @@ class ProcessManager
 {
     private const MICRO_DELAY = 100000; // 0.1 sec
 
-    private const EXECUTION_PAUSE = 5; // Seconds
+    protected const EXECUTION_PAUSE = 5; // Seconds
 
     private string $workflowExchangePipeName;
 
@@ -63,7 +63,8 @@ class ProcessManager
 
     public function run()
     {
-        $this->logger->info("Task manager started");
+        $mypid = getmypid();
+        $this->logger->info("Task manager ($mypid) started");
 
         $this->createSupplier();
         do {
@@ -131,22 +132,7 @@ class ProcessManager
             throw new RuntimeException("Failed to create named pipe ($p): " . posix_strerror(posix_get_last_error()));
         }
 
-        $pid = pcntl_fork();
-        if ($pid < 0) {
-            throw new RuntimeException("Failed to fork: " . pcntl_get_last_error());
-        }
-
-	    if ($pid > 0) {
-   	        $this->logger->info("Supplier ($pid) started");
-            $this->supplierPid = $pid;
-            sleep(1);
-            return;
-        }
-
-   	    $this->logger->info("Supplier started");
-        $this->supplier->run();
-
-        exit(0);
+        $this->createSupplierProcess();
     }
 
     protected function createWorkerProcesses(array $workflows): void
@@ -168,7 +154,7 @@ class ProcessManager
             $params[] = $wf_id;
         }
 
-        if (count($params) > 0) {
+        if (!empty($params)) {
             $this->newWorker($workflows);
         }
     }
@@ -216,6 +202,29 @@ class ProcessManager
         $this->logger->info("Worker ($pid) finished with status $status");
         unset($this->workerProcesses[$pid]);
         return $status;
+    }
+
+    /**
+     * @return void
+     */
+    protected function createSupplierProcess(): void
+    {
+        $pid = pcntl_fork();
+        if ($pid < 0) {
+            throw new RuntimeException("Failed to fork: " . pcntl_get_last_error());
+        }
+
+        if ($pid > 0) {
+            $this->logger->info("Supplier ($pid) started");
+            $this->supplierPid = $pid;
+            sleep(1);
+            return;
+        }
+
+        $this->logger->info("Supplier started");
+        $this->supplier->run();
+
+        exit(0);
     }
 
 }
