@@ -65,6 +65,11 @@ class ProcessManager extends ProcessManagerV1
                     break;
                 }
 
+                // Skip jobs with scheduled time in future
+                if($job->getScheduledAt() > time()) {
+                    continue;
+                }
+
                 // Check if task was executed recently
                 $lastExecTime = $this->taskHistory[$wf_id] ?? 0;
                 if(time() - $lastExecTime < self::EXECUTION_PAUSE) {
