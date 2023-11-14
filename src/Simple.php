@@ -87,8 +87,11 @@ class Simple extends AbstractProcessor {
             }
             // Save and unlock workflow
             $this->storage->save_workflow($workflow);
-            $job = new RedisEvent($workflow->get_id(), $workflow->get_type(), $workflow->get_start_time());
-            $this->scheduleQueue->push($job);
+
+            if(!$workflow->is_finished()) {
+                $job = new RedisEvent($workflow->get_id(), $workflow->get_type(), $workflow->get_start_time());
+                $this->scheduleQueue->push($job);
+            }
 
             if($this->exit) {
                 return;
