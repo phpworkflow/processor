@@ -43,6 +43,11 @@ class ProcessManager extends ProcessManagerV1
 
     public function run()
     {
+        if(!$this->eventsQueue->isRedisConnected()) {
+            $this->logger->error("No redis connection. Redis connection is mandatory for workflow processor.");
+            return;
+        }
+
         $this->logger->info("Task manager V2 ($this->myPid) started");
 
         $this->createSupplier();
