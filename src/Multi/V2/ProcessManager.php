@@ -66,7 +66,8 @@ class ProcessManager extends ProcessManagerV1
                 }
 
                 // Check if task was executed recently
-                if(time() - $this->taskHistory[$wf_id] < self::EXECUTION_PAUSE) {
+                $lastExecTime = $this->taskHistory[$wf_id] ?? 0;
+                if(time() - $lastExecTime < self::EXECUTION_PAUSE) {
                     continue;
                 }
 
