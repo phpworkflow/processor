@@ -58,6 +58,8 @@ class ProcessManager extends ProcessManagerV1
             $workerTasks = [];
             $batchWorkerTasks = [];
 
+            $this->logger->info("Total " . count($this->workflows) . " workflows");
+
             foreach ($this->workflows as $wf_id => $job) {
 
                 // Check if tasks for workers are ready
@@ -112,14 +114,18 @@ class ProcessManager extends ProcessManagerV1
     {
         $jobs = $this->eventsQueue->blPop(100); // TODO hardcode
 
+        $cnt = 0;
         foreach ($jobs as $job) {
             $wf_id = $job->getWorkflowId();
             $workflow = $this->workflows[$wf_id] ?? null;
 
             if($workflow === null || $job->getScheduledAt() === null) {
                 $this->workflows[$wf_id] = $job;
+                $cnt++;
             }
         }
+
+        $this->logger->info("Read $cnt jobs from queue");
     }
 
     /**
