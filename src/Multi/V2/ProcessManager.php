@@ -59,8 +59,6 @@ class ProcessManager extends ProcessManagerV1
             $workerTasks = [];
             $batchWorkerTasks = [];
 
-            $this->logger->info("Total " . count($this->workflows) . " workflows");
-
             $allowedWorkersCount = $this->numWorkers - count($this->workerProcesses);
 
             foreach ($this->workflows as $wf_id => $job) {
