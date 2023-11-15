@@ -11,6 +11,7 @@ use Workflow\Storage\Redis\Event as Job;
 class ProcessManager extends ProcessManagerV1
 {
 
+    protected const MAX_EVENTS_TO_READ = 100;
 
     protected int $myPid;
     /**
@@ -60,10 +61,12 @@ class ProcessManager extends ProcessManagerV1
 
             $this->logger->info("Total " . count($this->workflows) . " workflows");
 
+            $allowedWorkersCount = $this->numWorkers - count($this->workerProcesses);
+
             foreach ($this->workflows as $wf_id => $job) {
 
                 // Check if tasks for workers are ready
-                if(count($batchWorkerTasks) + count($workerTasks) >= $this->numWorkers) {
+                if(count($batchWorkerTasks) + count($workerTasks) >= $allowedWorkersCount) {
                     break;
                 }
 
@@ -100,10 +103,7 @@ class ProcessManager extends ProcessManagerV1
 
             $this->startTaskExecution($workerTasks, $batchWorkerTasks);
 
-            $status = $this->waitChildFinish();
-            if (pcntl_wifexited($status) === false) {
-                $this->logger->warn('Child finished with error');
-            }
+            $this->waitChildFinish();
 
         } while (!$this->isExit);
 
@@ -112,20 +112,31 @@ class ProcessManager extends ProcessManagerV1
 
     protected function getJobsFromQueue(): void
     {
-        $jobs = $this->eventsQueue->blPop(100); // TODO hardcode
+        $jobs = $this->eventsQueue->blPop(self::MAX_EVENTS_TO_READ);
 
         $cnt = 0;
         foreach ($jobs as $job) {
             $wf_id = $job->getWorkflowId();
+
+            $isEvent = $job->getScheduledAt() === null;
+            if( $isEvent ) {
+                $this->workflows[$wf_id] = $job;
+                $cnt++;
+                continue;
+            }
+
             $workflow = $this->workflows[$wf_id] ?? null;
 
-            if($workflow === null || $job->getScheduledAt() === null) {
+            $isNewScheduledWorkflow = $workflow === null || $job->getScheduledAt() > $workflow->getScheduledAt();
+            if( $isNewScheduledWorkflow ) {
                 $this->workflows[$wf_id] = $job;
                 $cnt++;
             }
         }
 
-        $this->logger->info("Read $cnt jobs from queue");
+        if($cnt > 0 ) {
+            $this->logger->info("Read $cnt jobs from queue");
+        }
     }
 
     /**

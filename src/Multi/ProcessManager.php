@@ -11,6 +11,8 @@ use Workflow\Storage\Postgres;
 
 class ProcessManager
 {
+
+    protected const MAX_WAIT_TIME = 30000000; // 30 Seconds
     protected const MICRO_DELAY = 100000; // 0.1 sec
 
     protected const EXECUTION_PAUSE = 5; // Seconds
@@ -76,10 +78,7 @@ class ProcessManager
             }
             sleep(1);
 
-            $status = $this->waitChildFinish();
-            if (pcntl_wifexited($status) === false) {
-                $this->logger->warn('Child finished with error');
-            }
+            $this->waitChildFinish();
 
         } while (!$this->isExit);
 
@@ -88,9 +87,25 @@ class ProcessManager
 
     protected function finalizeChildren(): void
     {
+        $waitTime = 0;
         while ($this->supplierPid > 0 || count($this->workerProcesses) > 0) {
             $this->waitChildFinish();
+            // Wait 0.1 sec
             usleep(self::MICRO_DELAY);
+            $waitTime += self::MICRO_DELAY;
+            if($waitTime > self::MAX_WAIT_TIME) {
+                $this->logger->warn("Wait time exceeded");
+                break;
+            }
+        }
+
+        // Kill all children
+        foreach ($this->workerProcesses as $pid) {
+            posix_kill($pid, SIGKILL);
+        }
+
+        if($this->supplierPid > 0) {
+            posix_kill($this->supplierPid, SIGKILL);
         }
 
         if(!empty($this->pipeFd)) {
@@ -186,24 +201,24 @@ class ProcessManager
         $this->workerProcesses[$pid] = $pid;
     }
 
-    protected function waitChildFinish(): int
+    protected function waitChildFinish(): void
     {
-        $pid = pcntl_wait($status, WNOHANG);
+        while( ($pid = pcntl_wait($status, WNOHANG)) > 0) {
 
-        if ($pid <= 0) {
-            return 0;
+            if ($this->supplierPid === $pid) {
+                $this->isExit = true;
+                $this->supplierPid = 0;
+                $this->logger->info("Supplier ($pid) finished with status $status");
+            }
+            else {
+                $this->logger->info("Worker ($pid) finished with status $status");
+                unset($this->workerProcesses[$pid]);
+            }
+
+            if (pcntl_wifexited($status) === false) {
+                $this->logger->warn("Child $pid finished with error");
+            }
         }
-
-        if ($this->supplierPid === $pid) {
-            $this->isExit = true;
-            $this->supplierPid = 0;
-            $this->logger->info("Supplier ($pid) finished with status $status");
-            return $status;
-        }
-
-        $this->logger->info("Worker ($pid) finished with status $status");
-        unset($this->workerProcesses[$pid]);
-        return $status;
     }
 
     /**
