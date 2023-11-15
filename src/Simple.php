@@ -98,7 +98,11 @@ class Simple extends AbstractProcessor {
             }
         }
 
-        $this->storage->cleanup();
+        // Run cleanup only in case if simple engine runs without supplier
+        if(empty($workflows)) {
+            $this->storage->cleanup();
+        }
+
         $this->logger->debug("Finish");
     }
 

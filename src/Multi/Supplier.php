@@ -13,6 +13,8 @@ class Supplier
 
     private const MAX_NUM_PIPE_ERRORS = 10;
 
+    protected const CYCLES_BEFORE_CLEANUP = 60;
+
     /**
      * @var Postgres
      */
@@ -86,6 +88,8 @@ class Supplier
 	    $this->storage = Postgres::instance($this->cfg->getDSN());
         $numPipeErrors = 0;
 
+        $cleanupCounter = self::CYCLES_BEFORE_CLEANUP;
+
 	    do {
 		    $jobs = $this->getJobsForWorkers();
 
@@ -98,6 +102,12 @@ class Supplier
 			    sleep(1);
 		    }
 		    sleep(1);
+
+            if($cleanupCounter-- <= 0) {
+                $this->storage->cleanup();
+                $cleanupCounter = self::CYCLES_BEFORE_CLEANUP;
+            }
+
 	    } while (!$this->isExit && (--$this->readCycles > 0) && ($numPipeErrors < self::MAX_NUM_PIPE_ERRORS));
 
 	    fclose($pipeFd);

@@ -34,6 +34,8 @@ class Supplier extends SupplierV1
                 $this->eventsQueue->push($job);
             }
 
+            $this->storage->cleanup();
+
             sleep($this->cycleDuration);
         } while (!$this->isExit && (--$this->readCycles > 0));
 
