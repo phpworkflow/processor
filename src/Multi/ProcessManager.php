@@ -15,7 +15,7 @@ class ProcessManager
     protected const MAX_WAIT_TIME = 30000000; // 30 Seconds
     protected const MICRO_DELAY = 100000; // 0.1 sec
 
-    protected const EXECUTION_PAUSE = 5; // Seconds
+    protected const EXECUTION_PAUSE = 3; // Seconds
 
     private string $workflowExchangePipeName;
 

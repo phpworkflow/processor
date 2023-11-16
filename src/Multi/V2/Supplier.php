@@ -18,7 +18,7 @@ class Supplier extends SupplierV1
         parent::__construct($logger, $readCycles);
         $cfg = new Config();
         $this->cycleDuration = $cfg->getSupplierCycleDuration();
-        $this->eventsQueue = new RedisQueue([$cfg->getSupplierQueue()]);
+        $this->eventsQueue = new RedisQueue([$cfg->getSupplierQueue()], 100000);
     }
 
     public function run(): void
