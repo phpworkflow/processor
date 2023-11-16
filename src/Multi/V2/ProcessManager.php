@@ -56,15 +56,22 @@ class ProcessManager extends ProcessManagerV1
         do {
             $this->getJobsFromQueue();
 
-            $workerTasks = [];
-            $batchWorkerTasks = [];
+            $this->waitChildFinish();
 
             $allowedWorkersCount = $this->numWorkers - count($this->workerProcesses);
+
+            if($allowedWorkersCount <= 0) {
+                continue;
+            }
+
+            $workerTasks = [];
+            $batchWorkerTasks = [];
+            $readyBatchTasks = [];
 
             foreach ($this->workflows as $wf_id => $job) {
 
                 // Check if tasks for workers are ready
-                if(count($batchWorkerTasks) + count($workerTasks) >= $allowedWorkersCount) {
+                if(count($readyBatchTasks) + count($workerTasks) >= $allowedWorkersCount) {
                     break;
                 }
 
@@ -89,9 +96,10 @@ class ProcessManager extends ProcessManagerV1
                     continue;
                 }
 
-                $numReady = $batchWorkerTasks[$jobType] ?? 0;
                 // Check if number of tasks for worker is reached
-                if($numReady > $numPerWorker) {
+                $numReady = count($batchWorkerTasks[$jobType] ?? []) ?? 0;
+                if($numReady >= $numPerWorker) {
+                    $readyBatchTasks[$jobType]=true;
                     continue;
                 }
 
@@ -100,8 +108,6 @@ class ProcessManager extends ProcessManagerV1
             }
 
             $this->startTaskExecution($workerTasks, $batchWorkerTasks);
-
-            $this->waitChildFinish();
 
         } while (!$this->isExit);
 
