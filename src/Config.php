@@ -72,6 +72,17 @@ class Config
     }
 
     /**
+     * Redis stream name for supplier events
+     * @return string
+     */
+    public function getManagerLockName(): string {
+        $env = getenv('WORKFLOW_MANAGER_LOCK_NAME');
+
+        return $env ?: ($_ENV['WORKFLOW_MANAGER_LOCK_NAME'] ?? 'workflow_manager_lock');
+    }
+
+
+    /**
      * Supplier cycle duration in seconds
      */
     public function getSupplierCycleDuration(): int

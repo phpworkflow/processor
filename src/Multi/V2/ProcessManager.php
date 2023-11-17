@@ -6,6 +6,7 @@ use PhpWorkflow\Processor\Config;
 use PhpWorkflow\Processor\Multi\ProcessManager as ProcessManagerV1;
 use Workflow\Storage\Redis\Config as RedisConfig;
 use Workflow\Storage\Redis\Queue as RedisQueue;
+use Workflow\Storage\Redis\Lock as RedisLock;
 use Workflow\Storage\Redis\Event as Job;
 
 class ProcessManager extends ProcessManagerV1
@@ -18,6 +19,8 @@ class ProcessManager extends ProcessManagerV1
      * @var RedisQueue
      */
     protected RedisQueue $eventsQueue;
+
+    protected RedisLock $lock;
 
     protected Config $cfg;
 
@@ -33,6 +36,7 @@ class ProcessManager extends ProcessManagerV1
         $redisCfg = new RedisConfig();
         $this->cfg = new Config();
         $this->eventsQueue = new RedisQueue([$redisCfg->eventsQueue(), $redisCfg->scheduleQueue(), $this->cfg->getSupplierQueue()], $redisCfg->queueLength());
+        $this->lock = new RedisLock($this->cfg->getManagerLockName(), gethostname());
     }
 
     public function createSupplier(): void
@@ -51,6 +55,14 @@ class ProcessManager extends ProcessManagerV1
 
         $this->logger->info("Task manager V2 ($this->myPid) started");
 
+        while(!$this->lock->isLocked()) {
+            if ($this->lock->lock()) {
+                $this->logger->info("Task manager ($this->myPid): data input stream is locked.");
+                break;
+            }
+            sleep(RedisLock::DEFAULT_KEY_EXPIRE_TIME - 5);
+        }
+
         $this->createSupplier();
         $jobCfg = $this->cfg->getJobsPerWorkerCfg();
         do {
@@ -64,50 +76,9 @@ class ProcessManager extends ProcessManagerV1
                 continue;
             }
 
-            $workerTasks = [];
-            $batchWorkerTasks = [];
-            $readyBatchTasks = [];
+            [$singleTasks, $batchTasks] = $this->selectTasksForExecution( $allowedWorkersCount, $jobCfg);
 
-            foreach ($this->workflows as $wf_id => $job) {
-
-                // Check if tasks for workers are ready
-                if(count($readyBatchTasks) + count($workerTasks) >= $allowedWorkersCount) {
-                    break;
-                }
-
-                // Skip jobs with scheduled time in future
-                if($job->getScheduledAt() > time()) {
-                    continue;
-                }
-
-                // Check if task was executed recently
-                $lastExecTime = $this->taskHistory[$wf_id] ?? 0;
-                if(time() - $lastExecTime < self::EXECUTION_PAUSE) {
-                    continue;
-                }
-
-                $jobType = $job->getWorkflowType();
-                $numPerWorker = $jobCfg[$jobType] ?? 1;
-
-                // Check if only one task should be executed
-                if($numPerWorker === 1) {
-                    $workerTasks[] = $wf_id;
-                    unset($this->workflows[$wf_id]);
-                    continue;
-                }
-
-                // Check if number of tasks for worker is reached
-                $numReady = count($batchWorkerTasks[$jobType] ?? []) ?? 0;
-                if($numReady >= $numPerWorker) {
-                    $readyBatchTasks[$jobType]=true;
-                    continue;
-                }
-
-                $batchWorkerTasks[$jobType][] = $wf_id;
-                unset($this->workflows[$wf_id]);
-            }
-
-            $this->startTaskExecution($workerTasks, $batchWorkerTasks);
+            $this->startTasksExecution($singleTasks, $batchTasks);
 
         } while (!$this->isExit);
 
@@ -147,7 +118,7 @@ class ProcessManager extends ProcessManagerV1
      * @param array $workerTasks
      * @param array $batchWorkerTasks
      */
-    protected function startTaskExecution(array $workerTasks, array $batchWorkerTasks): void
+    protected function startTasksExecution(array $workerTasks, array $batchWorkerTasks): void
     {
         foreach ($workerTasks as $wf_id) {
             $this->taskHistory[$wf_id] = time();
@@ -165,5 +136,58 @@ class ProcessManager extends ProcessManagerV1
         $this->taskHistory = array_filter($this->taskHistory, function ($v) {
             return time() - $v < self::EXECUTION_PAUSE;
         });
+    }
+
+    /**
+     * @param int $allowedWorkersCount
+     * @param array $jobCfg
+     * @return array
+     */
+    protected function selectTasksForExecution(int $allowedWorkersCount, array $jobCfg): array
+    {
+        $singleTasks = [];
+        $batchTasks = [];
+        $readyBatchTasks = [];
+
+        foreach ($this->workflows as $wf_id => $job) {
+
+            // Check if tasks for workers are ready
+            if (count($readyBatchTasks) + count($singleTasks) >= $allowedWorkersCount) {
+                break;
+            }
+
+            // Skip jobs with scheduled time in future
+            if ($job->getScheduledAt() > time()) {
+                continue;
+            }
+
+            // Check if task was executed recently
+            $lastExecTime = $this->taskHistory[$wf_id] ?? 0;
+            if (time() - $lastExecTime < self::EXECUTION_PAUSE) {
+                continue;
+            }
+
+            $jobType = $job->getWorkflowType();
+            $numPerWorker = (int)$jobCfg[$jobType] ?? 1;
+
+            // Check if only one task should be executed
+            if ($numPerWorker === 1) {
+                $singleTasks[] = $wf_id;
+                unset($this->workflows[$wf_id]);
+                continue;
+            }
+
+            // Check if number of tasks for worker is reached
+            $numReady = count($batchTasks[$jobType] ?? []) ?? 0;
+            if ($numReady >= $numPerWorker) {
+                $readyBatchTasks[$jobType] = true;
+                continue;
+            }
+
+            $batchTasks[$jobType][] = $wf_id;
+            unset($this->workflows[$wf_id]);
+        }
+
+        return array($singleTasks, $batchTasks);
     }
 }
