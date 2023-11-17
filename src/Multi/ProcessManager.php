@@ -12,7 +12,7 @@ use Workflow\Storage\Postgres;
 class ProcessManager
 {
 
-    protected const MAX_WAIT_TIME = 30000000; // 30 Seconds
+    protected const MAX_SHUTDOWN_TIME = 30000000; // 30 Seconds
     protected const MICRO_DELAY = 100000; // 0.1 sec
 
     protected const EXECUTION_PAUSE = 3; // Seconds
@@ -93,7 +93,7 @@ class ProcessManager
             // Wait 0.1 sec
             usleep(self::MICRO_DELAY);
             $waitTime += self::MICRO_DELAY;
-            if($waitTime > self::MAX_WAIT_TIME) {
+            if($waitTime > self::MAX_SHUTDOWN_TIME) {
                 $this->logger->warn("Wait time exceeded");
                 break;
             }
