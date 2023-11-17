@@ -36,7 +36,8 @@ class ProcessManager extends ProcessManagerV1
         $redisCfg = new RedisConfig();
         $this->cfg = new Config();
         $this->eventsQueue = new RedisQueue([$redisCfg->eventsQueue(), $redisCfg->scheduleQueue(), $this->cfg->getSupplierQueue()], $redisCfg->queueLength());
-        $this->lock = new RedisLock($this->cfg->getManagerLockName(), gethostname());
+        $lockValue = sprintf("%s_%s", gethostname(), $this->myPid);
+        $this->lock = new RedisLock($this->cfg->getManagerLockName(), $lockValue);
     }
 
     public function createSupplier(): void
@@ -60,7 +61,7 @@ class ProcessManager extends ProcessManagerV1
                 $this->logger->info("Task manager ($this->myPid): data input stream is locked.");
                 break;
             }
-            sleep(RedisLock::DEFAULT_KEY_EXPIRE_TIME - 5);
+            sleep(1);
         }
 
         $this->createSupplier();
@@ -79,6 +80,12 @@ class ProcessManager extends ProcessManagerV1
             [$singleTasks, $batchTasks] = $this->selectTasksForExecution( $allowedWorkersCount, $jobCfg);
 
             $this->startTasksExecution($singleTasks, $batchTasks);
+
+            // Update lock expire
+            if(!$this->lock->isLocked()) {
+                $this->isExit = true;
+                $this->logger->info("Task manager ($this->myPid) lost lock. Exit.");
+            }
 
         } while (!$this->isExit);
 
