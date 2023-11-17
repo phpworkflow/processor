@@ -168,7 +168,7 @@ class ProcessManager extends ProcessManagerV1
             }
 
             $jobType = $job->getWorkflowType();
-            $numPerWorker = (int)$jobCfg[$jobType] ?? 1;
+            $numPerWorker = (int)($jobCfg[$jobType] ?? 1);
 
             // Check if only one task should be executed
             if ($numPerWorker === 1) {
