@@ -28,7 +28,7 @@ class Supplier extends SupplierV1
         do {
             $jobs = $this->storage->get_scheduled_workflows();
 
-            $this->logger->info("Supplier read " . count($jobs) . " jobs");
+            $this->logger->info("SupplierV2 read " . count($jobs) . " jobs");
 
             foreach ($jobs as $job) {
                 $this->eventsQueue->push($job);
@@ -37,8 +37,13 @@ class Supplier extends SupplierV1
             $this->storage->cleanup();
 
             sleep($this->cycleDuration);
-        } while (!$this->isExit && (--$this->readCycles > 0));
+        } while (!$this->isExit && (--$this->readCycles > 0) && $this->parentExists());
 
-        $this->logger->info("Supplier finished");
+        $this->logger->info("SupplierV2 finished");
+    }
+
+    protected function parentExists() {
+        $parent = posix_getppid();
+	    return is_dir("/proc/$parent");
     }
 }

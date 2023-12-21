@@ -59,7 +59,6 @@ class ProcessManager
     public function stop($signal)
     {
         $this->logger->info("Signal $signal -> STOP");
-        $this->supplier->stop();
         $this->isExit = true;
     }
 
@@ -87,9 +86,14 @@ class ProcessManager
 
     protected function finalizeChildren(): void
     {
+	    $this->logger->info("finalizeChildren");
+        $res = posix_kill($this->supplierPid, SIGTERM);
+	    $this->logger->info("SIGTERM supplier $this->supplierPid: $res");
+
         $waitTime = 0;
-        while ($this->supplierPid > 0 || count($this->workerProcesses) > 0) {
+        while (count($this->workerProcesses) > 0) {
             $this->waitChildFinish();
+            $this->logger->info("Workers left: ".count($this->workerProcesses));
             // Wait 0.1 sec
             usleep(self::MICRO_DELAY);
             $waitTime += self::MICRO_DELAY;
@@ -101,11 +105,13 @@ class ProcessManager
 
         // Kill all children
         foreach ($this->workerProcesses as $pid) {
-            posix_kill($pid, SIGKILL);
+            $res = posix_kill($pid, SIGKILL);
+            $this->logger->info("Kill worker $pid: $res");
         }
 
         if($this->supplierPid > 0) {
-            posix_kill($this->supplierPid, SIGKILL);
+            $res = posix_kill($this->supplierPid, SIGKILL);
+            $this->logger->info("Kill supplier $this->supplierPid: $res");
         }
 
         if(!empty($this->pipeFd)) {
