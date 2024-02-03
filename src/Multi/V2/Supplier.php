@@ -43,7 +43,10 @@ class Supplier extends SupplierV1
     }
 
     protected function parentExists() {
-        $parent = posix_getppid();
-	    return is_dir("/proc/$parent");
+        $ppid = posix_getppid();
+        if ($ppid == 1) {
+            return false;
+        }
+        return posix_kill($ppid, 0);
     }
 }

@@ -49,14 +49,14 @@ class ProcessManager extends ProcessManagerV1
 
     public function run()
     {
-        if(!$this->eventsQueue->isRedisConnected()) {
+        if (!$this->eventsQueue->isRedisConnected()) {
             $this->logger->error("No redis connection. Redis connection is mandatory for workflow processor.");
             return;
         }
 
         $this->logger->info("Task manager V2 ($this->myPid) started");
 
-        while(!$this->lock->isLocked()) {
+        while (!$this->lock->isLocked()) {
             if ($this->lock->lock()) {
                 $this->logger->info("Task manager ($this->myPid): data input stream is locked.");
                 break;
@@ -73,16 +73,16 @@ class ProcessManager extends ProcessManagerV1
 
             $allowedWorkersCount = $this->numWorkers - count($this->workerProcesses);
 
-            if($allowedWorkersCount <= 0) {
+            if ($allowedWorkersCount <= 0) {
                 continue;
             }
 
-            [$singleTasks, $batchTasks] = $this->selectTasksForExecution( $allowedWorkersCount, $jobCfg);
+            [$singleTasks, $batchTasks] = $this->selectTasksForExecution($allowedWorkersCount, $jobCfg);
 
             $this->startTasksExecution($singleTasks, $batchTasks);
 
             // Update lock expire
-            if(!$this->lock->isLocked()) {
+            if (!$this->lock->isLocked()) {
                 $this->isExit = true;
                 $this->logger->info("Task manager ($this->myPid) lost lock. Exit.");
             }
@@ -94,14 +94,18 @@ class ProcessManager extends ProcessManagerV1
 
     protected function getJobsFromQueue(): void
     {
-        $jobs = $this->eventsQueue->blPop(self::MAX_EVENTS_TO_READ);
+        $jobs = [];
+        $tm = time();
+        do {
+            $jobs = array_merge($jobs, $this->eventsQueue->blPop(self::MAX_EVENTS_TO_READ));
+        } while ($tm === time());
 
         $cnt = 0;
         foreach ($jobs as $job) {
             $wf_id = $job->getWorkflowId();
 
             $isEvent = $job->getScheduledAt() === null;
-            if( $isEvent ) {
+            if ($isEvent) {
                 $this->workflows[$wf_id] = $job;
                 $cnt++;
                 continue;
@@ -110,14 +114,14 @@ class ProcessManager extends ProcessManagerV1
             $workflow = $this->workflows[$wf_id] ?? null;
 
             $isNewScheduledWorkflow = $workflow === null || $job->getScheduledAt() > $workflow->getScheduledAt();
-            if( $isNewScheduledWorkflow ) {
+            if ($isNewScheduledWorkflow) {
                 $this->workflows[$wf_id] = $job;
                 $cnt++;
             }
         }
 
-        if($cnt > 0 ) {
-            $this->logger->info("Read $cnt jobs from queue");
+        if ($cnt > 0) {
+            $this->logger->info("Read $cnt jobs total: " . count(array_keys($this->workflows)));
         }
     }
 
@@ -127,21 +131,22 @@ class ProcessManager extends ProcessManagerV1
      */
     protected function startTasksExecution(array $workerTasks, array $batchWorkerTasks): void
     {
+        $time = time();
         foreach ($workerTasks as $wf_id) {
-            $this->taskHistory[$wf_id] = time();
+            $this->taskHistory[$wf_id] = $time;
             $this->newWorker([$wf_id]);
         }
 
         foreach ($batchWorkerTasks as $wfIds) {
             foreach ($wfIds as $wf_id) {
-                $this->taskHistory[$wf_id] = time();
+                $this->taskHistory[$wf_id] = $time;
             }
             $this->newWorker($wfIds);
         }
 
         // Remove old tasks
-        $this->taskHistory = array_filter($this->taskHistory, function ($v) {
-            return time() - $v < self::EXECUTION_PAUSE;
+        $this->taskHistory = array_filter($this->taskHistory, function ($v) use ($time) {
+            return $time - $v < self::EXECUTION_PAUSE;
         });
     }
 
@@ -155,6 +160,9 @@ class ProcessManager extends ProcessManagerV1
         $singleTasks = [];
         $batchTasks = [];
         $readyBatchTasks = [];
+        $time = time();
+
+        $this->sortWorkflows();
 
         foreach ($this->workflows as $wf_id => $job) {
 
@@ -164,13 +172,13 @@ class ProcessManager extends ProcessManagerV1
             }
 
             // Skip jobs with scheduled time in future
-            if ($job->getScheduledAt() > time()) {
+            if ($job->getScheduledAt() > $time) {
                 continue;
             }
 
             // Check if task was executed recently
             $lastExecTime = $this->taskHistory[$wf_id] ?? 0;
-            if (time() - $lastExecTime < self::EXECUTION_PAUSE) {
+            if ($time - $lastExecTime < self::EXECUTION_PAUSE) {
                 continue;
             }
 
@@ -196,5 +204,27 @@ class ProcessManager extends ProcessManagerV1
         }
 
         return array($singleTasks, $batchTasks);
+    }
+
+    protected function sortWorkflows()
+    {
+        usort($this->workflows, function (Job $a, Job $b) {
+            $aScheduledAt = $a->getScheduledAt();
+            $bScheduledAt = $b->getScheduledAt();
+
+            if ($aScheduledAt === null) {
+                return -1;
+            }
+
+            if ($bScheduledAt === null) {
+                return 1;
+            }
+
+            if ($aScheduledAt === $bScheduledAt) {
+                return 0;
+            }
+
+            return ($aScheduledAt < $bScheduledAt) ? -1 : 1;
+        });
     }
 }
