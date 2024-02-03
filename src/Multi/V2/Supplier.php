@@ -4,7 +4,8 @@ namespace PhpWorkflow\Processor\Multi\V2;
 use PhpWorkflow\Processor\Config;
 use PhpWorkflow\Processor\Multi\Supplier as SupplierV1;
 use Workflow\Logger\ILogger;
-use Workflow\Storage\Postgres;
+use PhpWorkflow\Processor\Storage\Postgres;
+use Workflow\Storage\Redis\Event;
 use Workflow\Storage\Redis\Queue as RedisQueue;
 
 class Supplier extends SupplierV1
@@ -25,8 +26,12 @@ class Supplier extends SupplierV1
     {
         $this->storage = Postgres::instance($this->cfg->getDSN());
 
+        $lastScheduledAt = 0;
         do {
-            $jobs = $this->storage->get_scheduled_workflows();
+            /**
+             * @var Event[] $jobs
+             */
+            $jobs = $this->storage->get_workflows_for_execution($lastScheduledAt);
 
             $this->logger->info("SupplierV2 read " . count($jobs) . " jobs");
 
@@ -34,6 +39,12 @@ class Supplier extends SupplierV1
                 $this->eventsQueue->push($job);
             }
 
+            if(count($jobs) > 0) {
+                $lastScheduledAt = (int)(end($jobs)->getScheduledAt());
+                continue;
+            }
+
+            $lastScheduledAt = 0;
             $this->storage->cleanup();
 
             sleep($this->cycleDuration);

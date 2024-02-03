@@ -11,6 +11,9 @@ use Workflow\Workflow;
 
 class Simple extends AbstractProcessor {
 
+    // Keep workflow in memory in case if it should be executed in the nearest 600 seconds
+    protected const IN_MEMORY_TIME_LIMIT = 600;
+
     protected const NUM_TASKS=100;
 
     private int $num_cycles=1;
@@ -88,7 +91,7 @@ class Simple extends AbstractProcessor {
             // Save and unlock workflow
             $this->storage->save_workflow($workflow);
 
-            if(!$workflow->is_finished()) {
+            if(!$workflow->is_finished() && $workflow->get_start_time() < time() + self::IN_MEMORY_TIME_LIMIT) {
                 $job = new RedisEvent($workflow->get_id(), $workflow->get_type(), $workflow->get_start_time());
                 $this->scheduleQueue->push($job);
             }

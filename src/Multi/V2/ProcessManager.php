@@ -208,7 +208,7 @@ class ProcessManager extends ProcessManagerV1
 
     protected function sortWorkflows()
     {
-        usort($this->workflows, function (Job $a, Job $b) {
+        uasort($this->workflows, function (Job $a, Job $b) {
             $aScheduledAt = $a->getScheduledAt();
             $bScheduledAt = $b->getScheduledAt();
 
@@ -220,11 +220,7 @@ class ProcessManager extends ProcessManagerV1
                 return 1;
             }
 
-            if ($aScheduledAt === $bScheduledAt) {
-                return 0;
-            }
-
-            return ($aScheduledAt < $bScheduledAt) ? -1 : 1;
+            return $aScheduledAt <=> $bScheduledAt;
         });
     }
 }
