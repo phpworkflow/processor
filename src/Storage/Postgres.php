@@ -1,11 +1,19 @@
 <?php
 
 namespace PhpWorkflow\Processor\Storage;
+use PhpWorkflow\Processor\Config;
 use Workflow\Storage\IStorage;
+use Workflow\Storage\Postgres as Storage;
 use Workflow\Storage\Redis\Event as RedisEvent;
 
-class Postgres extends \Workflow\Storage\Postgres
+class Postgres extends Storage
 {
+    protected IStorage $storage;
+
+    public function __construct()
+    {
+    }
+
     /**
      * @param int $scheduledAt
      * @param int $limit
@@ -14,33 +22,61 @@ class Postgres extends \Workflow\Storage\Postgres
     public function get_workflows_for_execution(int $scheduledAt = 0, int $limit = 1000): array
     {
         $sql = <<<SQL
-select workflow_id,
-       type,
-       scheduled_at
-from (select distinct wf.workflow_id, wf.type, case when e.created_at is null then EXTRACT(EPOCH FROM wf.scheduled_at) else 0 end as scheduled_at
-      from workflow wf
-               left join
-           event e on wf.workflow_id = e.workflow_id
-      where ((e.status = :status and e.created_at <= current_timestamp)
-          or
-             (wf.status = :status and wf.scheduled_at <= current_timestamp))
-     ) wf
-where scheduled_at >= :scheduled_at
-order by scheduled_at
-limit :limit;
+select workflow_id, type, scheduled_at
+    from workflow wf
+        where scheduled_at >= :scheduled_at
+          and wf.status = :status
+          and wf.scheduled_at <= current_timestamp
+            order by scheduled_at
+            limit :limit;
 SQL;
 
-        $statement = $this->doSql($sql, [
+        $result = $this->select_workflows($sql, [
             'scheduled_at' => $scheduledAt,
             'status' => IStorage::STATUS_ACTIVE,
             'limit' => $limit
         ]);
 
+        return $result;
+    }
+
+    public function get_workflows_with_events(int $limit = 100): array
+    {
+        $sql = <<<SQL
+select distinct wf.workflow_id, wf.type, to_timestamp(0) from event e left join workflow wf on e.workflow_id = wf.workflow_id
+    where e.status = :status
+        and e.created_at > current_timestamp - interval '4 hour'
+    limit :limit;
+SQL;
+
+        $result = $this->select_workflows($sql, [
+            'status' => IStorage::STATUS_ACTIVE,
+            'limit' => $limit
+        ]);
+
+        return $result;
+    }
+
+    /**
+     * @param string $sql
+     * @param array $params
+     * @return RedisEvent[]
+     */
+    private function select_workflows(string $sql, array $params): array
+    {
+        $statement = $this->getStorage()->doSql($sql, $params);
         $result = [];
         while ($row = $statement->fetch()) {
             $result[$row['workflow_id']] = new RedisEvent($row['workflow_id'], $row['type'], (int)$row['scheduled_at']);
         }
-
         return $result;
+    }
+
+    protected function getStorage(): IStorage
+    {
+        if (empty($this->storage)) {
+            $this->storage = Storage::instance((new Config())->getDSN());
+        }
+        return $this->storage;
     }
 }

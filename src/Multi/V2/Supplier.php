@@ -14,20 +14,34 @@ class Supplier extends SupplierV1
 
     protected int $cycleDuration;
 
+    protected Postgres $storage;
+
+    protected int $lastSleepTime;
+
     public function __construct(ILogger $logger, $readCycles = 1000)
     {
         parent::__construct($logger, $readCycles);
         $cfg = new Config();
         $this->cycleDuration = $cfg->getSupplierCycleDuration();
         $this->eventsQueue = new RedisQueue([$cfg->getSupplierQueue()], 100000);
+        $this->lastSleepTime = time();
     }
 
     public function run(): void
     {
-        $this->storage = Postgres::instance($this->cfg->getDSN());
+        $this->storage = new Postgres();
 
         $lastScheduledAt = 0;
+
         do {
+            $jobs = $this->storage->get_workflows_with_events();
+
+            if(count($jobs) > 0) {
+                $this->pushEvents($jobs);
+                $this->logger->info("SupplierV2 read " . count($jobs) . " workflows with event");
+                sleep(1);
+            }
+
             /**
              * @var Event[] $jobs
              */
@@ -35,22 +49,25 @@ class Supplier extends SupplierV1
 
             $this->logger->info("SupplierV2 read " . count($jobs) . " jobs");
 
-            foreach ($jobs as $job) {
-                $this->eventsQueue->push($job);
-            }
-
             if(count($jobs) > 0) {
+                $this->pushEvents($jobs);
                 $lastScheduledAt = (int)(end($jobs)->getScheduledAt());
+                sleep(1);
                 continue;
             }
 
             $lastScheduledAt = 0;
-            $this->storage->cleanup();
-
-            sleep($this->cycleDuration);
+            $this->cleanupAndSleep();
         } while (!$this->isExit && (--$this->readCycles > 0) && $this->parentExists());
 
         $this->logger->info("SupplierV2 finished");
+    }
+
+    protected function pushEvents(array $jobs): void
+    {
+        foreach ($jobs as $job) {
+            $this->eventsQueue->push($job);
+        }
     }
 
     protected function parentExists() {
@@ -59,5 +76,21 @@ class Supplier extends SupplierV1
             return false;
         }
         return posix_kill($ppid, 0);
+    }
+
+    /**
+     * @param int $lastSleepTime
+     * @return void
+     */
+    protected function cleanupAndSleep(): void
+    {
+        $sleep = $this->cycleDuration - (time() - $this->lastSleepTime);
+
+        if($sleep > 0) {
+            $this->storage->cleanup();
+            sleep($sleep);
+        }
+
+        $this->lastSleepTime = time();
     }
 }
