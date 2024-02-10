@@ -15,6 +15,8 @@ class ProcessManager extends ProcessManagerV1
 
     protected const MAX_EVENTS_TO_READ = 100;
 
+    protected const HISTORY_TIME_LIMIT = 60;
+
     protected int $myPid;
     /**
      * @var RedisQueue
@@ -36,7 +38,11 @@ class ProcessManager extends ProcessManagerV1
         $this->myPid = getmypid();
         $redisCfg = new RedisConfig();
         $this->cfg = new Config();
-        $this->eventsQueue = new RedisQueue([$redisCfg->eventsQueue(), $redisCfg->scheduleQueue(), $this->cfg->getSupplierQueue()], $redisCfg->queueLength());
+        $this->eventsQueue = new RedisQueue(
+            [$redisCfg->eventsQueue(), $redisCfg->scheduleQueue(), $this->cfg->getSupplierQueue()],
+            $redisCfg->queueLength(),
+            self::HISTORY_TIME_LIMIT
+        );
         $lockValue = sprintf("%s_%s", gethostname(), $this->myPid);
         $this->lock = new RedisLock($this->cfg->getManagerLockName(), $lockValue);
     }

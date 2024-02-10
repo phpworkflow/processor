@@ -22,7 +22,7 @@ class Postgres extends Storage
     public function get_workflows_for_execution(int $scheduledAt = 0, int $limit = 1000): array
     {
         $sql = <<<SQL
-select workflow_id, type, scheduled_at
+select workflow_id, type, EXTRACT(EPOCH FROM wf.scheduled_at) as scheduled_at
     from workflow wf
         where scheduled_at >= to_timestamp(:scheduled_at)
           and wf.status = :status
@@ -43,7 +43,7 @@ SQL;
     public function get_workflows_with_events(int $limit = 100): array
     {
         $sql = <<<SQL
-select distinct wf.workflow_id, wf.type, to_timestamp(0) from event e left join workflow wf on e.workflow_id = wf.workflow_id
+select distinct wf.workflow_id, wf.type, 0 as scheduled_at from event e left join workflow wf on e.workflow_id = wf.workflow_id
     where e.status = :status
         and e.created_at > current_timestamp - interval '4 hour'
     limit :limit;

@@ -10,6 +10,8 @@ use Workflow\Storage\Redis\Queue as RedisQueue;
 
 class Supplier extends SupplierV1
 {
+    protected const MIN_JOBS_TO_CLEANUP = 100;
+
     protected RedisQueue $eventsQueue;
 
     protected int $cycleDuration;
@@ -53,7 +55,10 @@ class Supplier extends SupplierV1
                 $this->pushEvents($jobs);
                 $lastScheduledAt = (int)(end($jobs)->getScheduledAt());
                 sleep(1);
-                continue;
+                
+                if(count($jobs) > self::MIN_JOBS_TO_CLEANUP) {
+                    continue;
+                }
             }
 
             $lastScheduledAt = 0;
