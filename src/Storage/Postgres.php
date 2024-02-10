@@ -14,6 +14,11 @@ class Postgres extends Storage
     {
     }
 
+    public function cleanup(): void
+    {
+        $this->getStorage()->cleanup();
+    }
+
     /**
      * @param int $scheduledAt
      * @param int $limit
