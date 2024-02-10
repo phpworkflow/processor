@@ -24,7 +24,7 @@ class Postgres extends Storage
         $sql = <<<SQL
 select workflow_id, type, scheduled_at
     from workflow wf
-        where scheduled_at >= :scheduled_at
+        where scheduled_at >= to_timestamp(:scheduled_at)
           and wf.status = :status
           and wf.scheduled_at <= current_timestamp
             order by scheduled_at
