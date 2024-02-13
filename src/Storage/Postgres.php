@@ -50,6 +50,8 @@ SQL;
         $sql = <<<SQL
 select distinct wf.workflow_id, wf.type, 0 as scheduled_at from event e left join workflow wf on e.workflow_id = wf.workflow_id
     where e.status = :status
+        and wf.workflow_id > 0
+        and wf.status = :status
         and e.created_at > current_timestamp - interval '4 hour'
     limit :limit;
 SQL;
