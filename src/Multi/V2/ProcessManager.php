@@ -149,7 +149,15 @@ class ProcessManager extends ProcessManagerV1
      */
     protected function startTasksExecution(array $tasks): void
     {
+        if (empty($tasks)) {
+            return;
+        }
+
         $time = time();
+
+        // Close redis connections to prevent clone in child processes
+        $this->lock->stop();
+        $this->eventsQueue->stop();
 
         foreach ($tasks as $wfIds) {
             foreach ($wfIds as $wf_id) {
