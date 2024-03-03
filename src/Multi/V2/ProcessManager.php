@@ -135,15 +135,14 @@ class ProcessManager extends ProcessManagerV1
             $workflowId = $job->getWorkflowId();
             $type = $job->getWorkflowType();
 
-            if(!isset($jobCfg[$type])) {
-                $type = self::TYPE_OTHER;
-            }
-
-            $isEvent = $job->getScheduledAt() === null;
-            if ($isEvent) {
+            if (empty($type)) {
                 $this->events[$workflowId] = $workflowId;
                 $cnt++;
                 continue;
+            }
+
+            if(!isset($jobCfg[$type])) {
+                $type = self::TYPE_OTHER;
             }
 
             $workflow = $this->workflows[$type][$workflowId] ?? null;
@@ -164,8 +163,6 @@ class ProcessManager extends ProcessManagerV1
                 return $carry + count($item);
             }, 0);
 
-            $total += count($this->events);
-
             $this->logger->info("Read $cnt jobs total: $total");
         }
     }
@@ -176,7 +173,7 @@ class ProcessManager extends ProcessManagerV1
      */
     protected function startTasksExecution(array $tasks): void
     {
-        if (empty($tasks)) {
+        if (empty($tasks[0])) {
             return;
         }
 
