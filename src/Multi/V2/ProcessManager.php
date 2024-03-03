@@ -32,6 +32,11 @@ class ProcessManager extends ProcessManagerV1
      */
     protected array $workflows = [];
 
+    /**
+     * @var Job[]
+     */
+    protected array $events = [];
+
     public function __construct()
     {
         parent::__construct();
@@ -84,9 +89,14 @@ class ProcessManager extends ProcessManagerV1
                 continue;
             }
 
-            $tasks = $this->selectTasksForExecution($allowedWorkersCount, $jobCfg);
+            $eventTasks = $this->getEventsForExecution($allowedWorkersCount);
+            $allowedWorkersCount -= count($eventTasks);
+            $this->startTasksExecution($eventTasks);
 
-            $this->startTasksExecution($tasks);
+            if ($allowedWorkersCount > 0) {
+                $tasks = $this->selectTasksForExecution($allowedWorkersCount, $jobCfg);
+                $this->startTasksExecution($tasks);
+            }
 
             // Update lock expire
             if (!$this->lock->isLocked()) {
@@ -97,6 +107,17 @@ class ProcessManager extends ProcessManagerV1
         } while (!$this->isExit);
 
         $this->finalizeChildren();
+    }
+
+    protected function getEventsForExecution(int $count): array
+    {
+
+        $events = array_keys($this->events);
+        $tasks = array_splice($events, 0, $count);
+        foreach ($tasks as $workflowId) {
+            unset($this->events[$workflowId]);
+        }
+        return [$tasks];
     }
 
     protected function getJobsFromQueue(): void
@@ -111,7 +132,7 @@ class ProcessManager extends ProcessManagerV1
 
         $cnt = 0;
         foreach ($jobs as $job) {
-            $wf_id = $job->getWorkflowId();
+            $workflowId = $job->getWorkflowId();
             $type = $job->getWorkflowType();
 
             if(!isset($jobCfg[$type])) {
@@ -120,24 +141,30 @@ class ProcessManager extends ProcessManagerV1
 
             $isEvent = $job->getScheduledAt() === null;
             if ($isEvent) {
-                $this->workflows[$type][$wf_id] = $job;
+                $this->events[$workflowId] = $workflowId;
                 $cnt++;
                 continue;
             }
 
-            $workflow = $this->workflows[$type][$wf_id] ?? null;
+            $workflow = $this->workflows[$type][$workflowId] ?? null;
 
             $isNewScheduledWorkflow = $workflow === null || $job->getScheduledAt() > $workflow->getScheduledAt();
             if ($isNewScheduledWorkflow) {
-                $this->workflows[$type][$wf_id] = $job;
+                $this->workflows[$type][$workflowId] = $job;
                 $cnt++;
             }
+        }
+
+        foreach ($this->workflows as $type => $jobList) {
+            $this->workflows[$type] = array_diff_key($jobList, $this->events);
         }
 
         if ($cnt > 0) {
             $total = array_reduce($this->workflows, function ($carry, $item) {
                 return $carry + count($item);
             }, 0);
+
+            $total += count($this->events);
 
             $this->logger->info("Read $cnt jobs total: $total");
         }
@@ -193,32 +220,25 @@ class ProcessManager extends ProcessManagerV1
 
             foreach ($types as $type) {
                 if($allowedWorkersCount <= 0) {
-                    break;
+                    return $tasks;
                 }
 
                 $allowedWorkersCount--;
                 $numPerWorker = (int)($jobCfg[$type] ?? 1);
 
-                if ($numPerWorker === 1) {
-                    $workflow_id = array_key_first($readyWorkflows[$type]);
-                    $tasks[] = [$workflow_id];
-                    unset($this->workflows[$type][$workflow_id]);
-                    unset($readyWorkflows[$type][$workflow_id]);
-                    continue;
-                }
-
                 $jobs = [];
                 foreach ($readyWorkflows[$type] as $workflow_id => $scheduledAt) {
-                    if(count($jobs) < $numPerWorker) {
-                        $jobs[] = $workflow_id;
-                        unset($this->workflows[$type][$workflow_id]);
-                        unset($readyWorkflows[$type][$workflow_id]);
+                    if(count($jobs) > $numPerWorker) {
+                        break;
                     }
+                    $jobs[] = $workflow_id;
+                    unset($this->workflows[$type][$workflow_id]);
+                    unset($readyWorkflows[$type][$workflow_id]);
                 }
                 $tasks[] = $jobs;
             }
 
-        } while ($allowedWorkersCount > 0 && !empty($readyWorkflows));
+        } while (!empty($readyWorkflows));
 
         return $tasks;
     }
