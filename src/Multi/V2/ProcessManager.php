@@ -17,6 +17,8 @@ class ProcessManager extends ProcessManagerV1
 
     protected const HISTORY_TIME_LIMIT = 60;
 
+    protected const LAST_SCHEDULED_TIME_TTL = 3600 * 4;
+
     protected int $myPid;
     /**
      * @var RedisQueue
@@ -36,6 +38,11 @@ class ProcessManager extends ProcessManagerV1
      * @var Job[]
      */
     protected array $events = [];
+
+    /**
+     * @var Job[]
+     */
+    protected array $lastScheduledTime = [];
 
     public function __construct()
     {
@@ -104,6 +111,7 @@ class ProcessManager extends ProcessManagerV1
                 $this->logger->info("Task manager ($this->myPid) lost lock. Exit.");
             }
 
+            $this->cleanupLastScheduledTime();
         } while (!$this->isExit);
 
         $this->finalizeChildren();
@@ -120,6 +128,35 @@ class ProcessManager extends ProcessManagerV1
         return [$tasks];
     }
 
+    protected function isDuplicateJob(Job $job): bool
+    {
+        $workflowId = $job->getWorkflowId();
+        $scheduledAt = $job->getScheduledAt() ?: time();
+
+        if(!isset($this->lastScheduledTime[$workflowId])) {
+            $this->lastScheduledTime[$workflowId] = $scheduledAt;
+            return false;
+        }
+
+        if($this->lastScheduledTime[$workflowId] >= $scheduledAt) {
+            return true;
+        }
+
+        $this->lastScheduledTime[$workflowId] = $scheduledAt;
+        return false;
+    }
+
+
+    protected function cleanupLastScheduledTime()
+    {
+        $tm = time();
+        foreach ($this->lastScheduledTime as $workflowId => $scheduledAt) {
+            if($tm - $scheduledAt > self::LAST_SCHEDULED_TIME_TTL) {
+                unset($this->lastScheduledTime[$workflowId]);
+            }
+        }
+    }
+
     protected function getJobsFromQueue(): void
     {
         $jobs = [];
@@ -132,6 +169,12 @@ class ProcessManager extends ProcessManagerV1
 
         $cnt = 0;
         foreach ($jobs as $job) {
+
+            if($this->isDuplicateJob($job)) {
+                $this->logger->error("Skip duplicate: " . $job->getWorkflowId());
+                continue;
+            }
+
             $workflowId = $job->getWorkflowId();
             $type = $job->getWorkflowType();
 
