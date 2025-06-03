@@ -17,7 +17,11 @@ class ProcessManager extends ProcessManagerV1
 
     protected const HISTORY_TIME_LIMIT = 60;
 
-    protected const LAST_SCHEDULED_TIME_TTL = 3600 * 4;
+    protected const LAST_SCHEDULED_TIME_TTL = 120;
+
+    protected const ELEM_SCHEDULED_AT = 0;
+
+    protected const ELEM_CREATED_AT = 1;
 
     protected int $myPid;
     /**
@@ -134,15 +138,14 @@ class ProcessManager extends ProcessManagerV1
         $scheduledAt = $job->getScheduledAt() ?: time();
 
         if(!isset($this->lastScheduledTime[$workflowId])) {
-            $this->lastScheduledTime[$workflowId] = $scheduledAt;
             return false;
         }
 
-        if($this->lastScheduledTime[$workflowId] >= $scheduledAt) {
+        $lastScheduledTime = $this->lastScheduledTime[$workflowId][self::ELEM_SCHEDULED_AT] ?? 0;
+        if($lastScheduledTime >= $scheduledAt) {
             return true;
         }
 
-        $this->lastScheduledTime[$workflowId] = $scheduledAt;
         return false;
     }
 
@@ -150,8 +153,9 @@ class ProcessManager extends ProcessManagerV1
     protected function cleanupLastScheduledTime()
     {
         $tm = time();
-        foreach ($this->lastScheduledTime as $workflowId => $scheduledAt) {
-            if($tm - $scheduledAt > self::LAST_SCHEDULED_TIME_TTL) {
+        foreach ($this->lastScheduledTime as $workflowId => $timeData) {
+            $createdAt = $timeData[self::ELEM_CREATED_AT];
+            if($tm - $createdAt > self::LAST_SCHEDULED_TIME_TTL) {
                 unset($this->lastScheduledTime[$workflowId]);
             }
         }
@@ -171,7 +175,7 @@ class ProcessManager extends ProcessManagerV1
         foreach ($jobs as $job) {
 
             if($this->isDuplicateJob($job)) {
-                $this->logger->error("Skip duplicate: " . $job->getWorkflowId());
+                $this->logger->error("Skip duplicate: " . $job->getWorkflowId(). " time" . $job->getScheduledAt());
                 continue;
             }
 
@@ -267,13 +271,19 @@ class ProcessManager extends ProcessManagerV1
                 $numPerWorker = (int)($jobCfg[$type] ?? 1);
 
                 $jobs = [];
-                foreach ($readyWorkflows[$type] as $workflow_id => $scheduledAt) {
+                foreach ($readyWorkflows[$type] as $workflowId => $scheduledAt) {
                     if(count($jobs) > $numPerWorker) {
                         break;
                     }
-                    $jobs[] = $workflow_id;
-                    unset($this->workflows[$type][$workflow_id]);
-                    unset($readyWorkflows[$type][$workflow_id]);
+
+		            $this->lastScheduledTime[$workflowId] = [
+                        self::ELEM_SCHEDULED_AT => $scheduledAt,
+                        self::ELEM_CREATED_AT => time()
+                    ];
+
+                    $jobs[] = $workflowId;
+                    unset($this->workflows[$type][$workflowId]);
+                    unset($readyWorkflows[$type][$workflowId]);
                 }
                 $tasks[] = $jobs;
             }
