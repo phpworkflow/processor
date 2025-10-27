@@ -27,18 +27,17 @@ class Postgres extends Storage
     public function get_workflows_for_execution(int $scheduledAt = 0, int $limit = 1000): array
     {
         $sql = <<<SQL
-select workflow_id, type, EXTRACT(EPOCH FROM wf.scheduled_at) as scheduled_at
-    from workflow wf
-        where scheduled_at >= to_timestamp(:scheduled_at)
-          and wf.status = :status
-          and wf.scheduled_at <= current_timestamp
-            order by scheduled_at
-            limit :limit;
+SELECT workflow_id, type, EXTRACT(EPOCH FROM wf.scheduled_at) as scheduled_at
+FROM workflow wf
+WHERE scheduled_at >= to_timestamp(:scheduled_at)
+    AND wf.status = 'ACTIVE'
+    AND wf.scheduled_at <= current_timestamp
+ORDER BY scheduled_at
+LIMIT :limit
 SQL;
 
         $result = $this->select_workflows($sql, [
             'scheduled_at' => $scheduledAt,
-            'status' => IStorage::STATUS_ACTIVE,
             'limit' => $limit
         ]);
 
@@ -48,16 +47,17 @@ SQL;
     public function get_workflows_with_events(int $limit = 100): array
     {
         $sql = <<<SQL
-select distinct wf.workflow_id, wf.type, 0 as scheduled_at from event e left join workflow wf on e.workflow_id = wf.workflow_id
-    where e.status = :status
-        and wf.workflow_id > 0
-        and wf.status = :status
-        and e.created_at > current_timestamp - interval '4 hour'
-    limit :limit;
+SELECT DISTINCT wf.workflow_id, wf.type, 0 as scheduled_at
+FROM event e
+LEFT JOIN workflow wf ON e.workflow_id = wf.workflow_id
+WHERE e.status = 'ACTIVE'
+    AND wf.workflow_id > 0
+    AND wf.status = 'ACTIVE'
+    AND e.created_at > current_timestamp - interval '4 hour'
+LIMIT :limit
 SQL;
 
         $result = $this->select_workflows($sql, [
-            'status' => IStorage::STATUS_ACTIVE,
             'limit' => $limit
         ]);
 
